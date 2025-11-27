@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import json
 from metrics import precision_at_k, ndcg_at_k, novelty, diversity, recall_at_k, average_precision_at_k
+import tqdm
 
 def evaluate_model(n, user_groups, user_items_test: dict, item_popularity: dict, item_categories: dict, get_recommendations, delta=0.05):
     """
@@ -25,7 +26,7 @@ def evaluate_model(n, user_groups, user_items_test: dict, item_popularity: dict,
     all_diversities = []
     all_precisions = []
     
-    for user_id in user_items_test.keys():
+    for user_id in tqdm.tqdm(user_items_test.keys(), desc="Evaluando usuarios"):
         
         # 1. Obtener datos del usuario
         if user_id not in user_groups:
