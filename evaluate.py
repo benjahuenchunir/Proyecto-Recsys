@@ -161,10 +161,10 @@ def evaluate_model(
 
     fairness_report["group_averages"] = {
         g: {
-            "recall (Cobertura)": avg_recall_group.get(g, 0.0),
-            "precision (Tasa Aceptación)": avg_precision_group.get(g, 0.0),
+            "recall": avg_recall_group.get(g, 0.0),
+            "precision": avg_precision_group.get(g, 0.0),
             "MAP": avg_map_group.get(g, 0.0),
-            "NDCG": avg_ndcg_group.get(g, 0.0),
+            "nDCG": avg_ndcg_group.get(g, 0.0),
             "novelty": avg_novelty_group.get(g, 0.0),
             "diversity": avg_diversity_group.get(g, 0.0),
             "count": len(group_scores["recall"].get(g, [])),
@@ -194,18 +194,18 @@ def evaluate_model(
             ):
                 continue
 
-            disp_recall = calc_proportional_disparity(g_a, g_b, avg_recall_group)
-            disp_precision = calc_proportional_disparity(g_a, g_b, avg_precision_group)
-            disp_map = calc_proportional_disparity(g_a, g_b, avg_map_group)
-            disp_ndcg = calc_proportional_disparity(g_a, g_b, avg_ndcg_group)
-            disp_novelty = calc_proportional_disparity(g_a, g_b, avg_novelty_group)
-            disp_diversity = calc_proportional_disparity(g_a, g_b, avg_diversity_group)
+            disp_recall = calc_disparity(g_a, g_b, avg_recall_group)
+            disp_precision = calc_disparity(g_a, g_b, avg_precision_group)
+            disp_map = calc_disparity(g_a, g_b, avg_map_group)
+            disp_ndcg = calc_disparity(g_a, g_b, avg_ndcg_group)
+            disp_novelty = calc_disparity(g_a, g_b, avg_novelty_group)
+            disp_diversity = calc_disparity(g_a, g_b, avg_diversity_group)
 
             pair_report = {
                 "pair": (g_a, g_b),
                 "recall_disparity": {
                     "value": disp_recall,
-                    "bias": f"{disp_recall > alpha}",
+                    "bias": f"{is_biased(disp_recall, alpha)}",
                     "toward": (
                         g_a
                         if avg_recall_group.get(g_a, 0.0)
@@ -215,7 +215,7 @@ def evaluate_model(
                 },
                 "precision_disparity": {
                     "value": disp_precision,
-                    "bias": f"{disp_precision > alpha}",
+                    "bias": f"{is_biased(disp_precision, alpha)}",
                     "toward": (
                         g_a
                         if avg_precision_group.get(g_a, 0.0)
@@ -225,7 +225,7 @@ def evaluate_model(
                 },
                 "map_disparity": {
                     "value": disp_map,
-                    "bias": f"{disp_map > alpha}",
+                    "bias": f"{is_biased(disp_map, alpha)}",
                     "toward": (
                         g_a
                         if avg_map_group.get(g_a, 0.0) > avg_map_group.get(g_b, 0.0)
@@ -234,7 +234,7 @@ def evaluate_model(
                 },
                 "ndcg_disparity": {
                     "value": disp_ndcg,
-                    "bias": f"{disp_ndcg > alpha}",
+                    "bias": f"{is_biased(disp_ndcg, alpha)}",
                     "toward": (
                         g_a
                         if avg_ndcg_group.get(g_a, 0.0) > avg_ndcg_group.get(g_b, 0.0)
@@ -243,7 +243,7 @@ def evaluate_model(
                 },
                 "novelty_disparity": {
                     "value": disp_novelty,
-                    "bias": f"{disp_novelty > alpha}",
+                    "bias": f"{is_biased(disp_novelty, alpha)}",
                     "toward": (
                         g_a
                         if avg_novelty_group.get(g_a, 0.0)
@@ -253,7 +253,7 @@ def evaluate_model(
                 },
                 "diversity_disparity": {
                     "value": disp_diversity,
-                    "bias": f"{disp_diversity > alpha}",
+                    "bias": f"{is_biased(disp_diversity, alpha)}",
                     "toward": (
                         g_a
                         if avg_diversity_group.get(g_a, 0.0)
@@ -275,16 +275,16 @@ def evaluate_model(
                 prop_b = group_category_proportions.get(g_b, {}).get(cat, 0.0)
                 # La disparidad es la diferencia en la proporción de recomendaciones de esa categoría
                 category_disparities[cat] = (
-                    abs(prop_a - prop_b) / max(prop_a, prop_b)
+                    min(prop_a, prop_b) / max(prop_a, prop_b)
                     if max(prop_a, prop_b) > 0
-                    else 0.0
+                    else 1.0
                 )
 
             fairness_report["category_disparity_report"][f"{g_a}_vs_{g_b}"] = {}
             for cat in category_disparities:
                 fairness_report["category_disparity_report"][f"{g_a}_vs_{g_b}"][cat] = {
                     "value": category_disparities[cat],
-                    "bias": f"{category_disparities[cat] > alpha}",
+                    "bias": f"{is_biased(category_disparities[cat], alpha)}",
                     "toward": (
                         g_a
                         if group_category_proportions.get(g_a, {}).get(cat, 0.0)
@@ -296,9 +296,13 @@ def evaluate_model(
     return metrics_global, fairness_report
 
 
-def calc_proportional_disparity(a, b, metric):
+def calc_disparity(a, b, metric):
     r_a, r_b = metric[a], metric[b]
-    return abs(r_a - r_b) / max(r_a, r_b) if max(r_a, r_b) > 0 else 0
+    return min(r_a, r_b) / max(r_a, r_b)
+
+
+def is_biased(disparity, tolerance):
+    return disparity < 1 - tolerance
 
 
 def get_metrics(
