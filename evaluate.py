@@ -21,7 +21,7 @@ def evaluate_model(
     item_popularity: dict,
     item_categories: dict,
     get_recommendations,
-    delta=0.05,
+    alpha=0.02,
 ):
     """
     Evalúa el modelo calculando métricas globales y de fairness.
@@ -31,6 +31,19 @@ def evaluate_model(
         user_groups (dict): {user_id: 'group_label'}
         delta (float): Umbral de disparidad para considerar "sesgado".
     """
+
+    groups = list(set(user_groups.values()))
+    group_names_to_consider = [
+        "Male",
+        "Female",
+        "<18",
+        "18-24",
+        "25-34",
+        "35-44",
+        "45-54",
+        "55-64",
+        "65+",
+    ]
 
     group_scores = {
         "recall": {},
@@ -43,7 +56,7 @@ def evaluate_model(
     }
 
     all_recalls = []
-    all_aps = []
+    all_maps = []
     all_ndcgs = []
     all_novelties = []
     all_diversities = []
@@ -56,6 +69,9 @@ def evaluate_model(
             continue
 
         group = user_groups[user_id]
+        if group not in group_names_to_consider:
+            continue
+
         truth_items = user_items_test.get(user_id, set())
 
         # 2. Obtener recomendaciones y vector de relevancia
@@ -66,7 +82,7 @@ def evaluate_model(
         # 3. Calcular métricas individuales
         user_recall = recall_at_k(rel_vector, n)
         user_precision = precision_at_k(rel_vector, n)
-        user_ap = average_precision_at_k(rel_vector, n)
+        user_map = average_precision_at_k(rel_vector, n)
         user_ndcg = ndcg_at_k(rel_vector, n)
         user_novelty = novelty(rec, item_popularity)
         user_diversity = diversity(rec, n, item_categories)
@@ -74,7 +90,7 @@ def evaluate_model(
         # 4. Almacenar para métricas globales
         all_recalls.append(user_recall)
         all_precisions.append(user_precision)
-        all_aps.append(user_ap)
+        all_maps.append(user_map)
         all_ndcgs.append(user_ndcg)
         all_novelties.append(user_novelty)
         all_diversities.append(user_diversity)
@@ -91,7 +107,7 @@ def evaluate_model(
 
         group_scores["recall"][group].append(user_recall)
         group_scores["precision"][group].append(user_precision)
-        group_scores["map"][group].append(user_ap)
+        group_scores["map"][group].append(user_map)
         group_scores["ndcg"][group].append(user_ndcg)
         group_scores["novelty"][group].append(user_novelty)
         group_scores["diversity"][group].append(user_diversity)
@@ -108,7 +124,7 @@ def evaluate_model(
     metrics_global = {
         "mean_recall": np.mean(all_recalls) if all_recalls else 0.0,
         "mean_precision": np.mean(all_precisions) if all_precisions else 0.0,
-        "mean_ap (MAP)": np.mean(all_aps) if all_aps else 0.0,
+        "mean_ap (MAP)": np.mean(all_maps) if all_maps else 0.0,
         "mean_ndcg": np.mean(all_ndcgs) if all_ndcgs else 0.0,
         "mean_novelty": np.mean(all_novelties) if all_novelties else 0.0,
         "mean_diversity": np.mean(all_diversities) if all_diversities else 0.0,
@@ -118,7 +134,7 @@ def evaluate_model(
     # --- 7. Calcular Métricas de Fairness (Disparidad) ---
 
     fairness_report = {
-        "delta_threshold": delta,
+        "delta_threshold": alpha,
         "group_averages": {},
         "disparity_reports": [],
         "category_disparity_report": {},
@@ -157,12 +173,26 @@ def evaluate_model(
     }
 
     # Comparar pares de grupos
-    # group_names = list(avg_recall_group.keys())
-    group_names = ["Male", "Female"]
-    for i in range(len(group_names)):
-        for j in range(i + 1, len(group_names)):
-            g_a = group_names[i]
-            g_b = group_names[j]
+    group_names_to_consider = [
+        "Male",
+        "Female",
+        "<18",
+        "18-24",
+        "25-34",
+        "35-44",
+        "45-54",
+        "55-64",
+        "65+",
+    ]
+    for i in range(len(groups)):
+        for j in range(i + 1, len(groups)):
+            g_a = groups[i]
+            g_b = groups[j]
+
+            if (g_a not in group_names_to_consider) or (
+                g_b not in group_names_to_consider
+            ):
+                continue
 
             disp_recall = calc_proportional_disparity(g_a, g_b, avg_recall_group)
             disp_precision = calc_proportional_disparity(g_a, g_b, avg_precision_group)
@@ -175,27 +205,61 @@ def evaluate_model(
                 "pair": (g_a, g_b),
                 "recall_disparity": {
                     "value": disp_recall,
-                    "bias": f"{disp_recall > delta}",
+                    "bias": f"{disp_recall > alpha}",
+                    "toward": (
+                        g_a
+                        if avg_recall_group.get(g_a, 0.0)
+                        > avg_recall_group.get(g_b, 0.0)
+                        else g_b
+                    ),
                 },
                 "precision_disparity": {
                     "value": disp_precision,
-                    "bias": f"{disp_precision > delta}",
+                    "bias": f"{disp_precision > alpha}",
+                    "toward": (
+                        g_a
+                        if avg_precision_group.get(g_a, 0.0)
+                        > avg_precision_group.get(g_b, 0.0)
+                        else g_b
+                    ),
                 },
                 "map_disparity": {
                     "value": disp_map,
-                    "bias": f"{disp_map > delta}",
+                    "bias": f"{disp_map > alpha}",
+                    "toward": (
+                        g_a
+                        if avg_map_group.get(g_a, 0.0) > avg_map_group.get(g_b, 0.0)
+                        else g_b
+                    ),
                 },
                 "ndcg_disparity": {
                     "value": disp_ndcg,
-                    "bias": f"{disp_ndcg > delta}",
+                    "bias": f"{disp_ndcg > alpha}",
+                    "toward": (
+                        g_a
+                        if avg_ndcg_group.get(g_a, 0.0) > avg_ndcg_group.get(g_b, 0.0)
+                        else g_b
+                    ),
                 },
                 "novelty_disparity": {
                     "value": disp_novelty,
-                    "bias": f"{disp_novelty > delta}",
+                    "bias": f"{disp_novelty > alpha}",
+                    "toward": (
+                        g_a
+                        if avg_novelty_group.get(g_a, 0.0)
+                        > avg_novelty_group.get(g_b, 0.0)
+                        else g_b
+                    ),
                 },
                 "diversity_disparity": {
                     "value": disp_diversity,
-                    "bias": f"{disp_diversity > delta}",
+                    "bias": f"{disp_diversity > alpha}",
+                    "toward": (
+                        g_a
+                        if avg_diversity_group.get(g_a, 0.0)
+                        > avg_diversity_group.get(g_b, 0.0)
+                        else g_b
+                    ),
                 },
             }
             fairness_report["disparity_reports"].append(pair_report)
@@ -220,7 +284,8 @@ def evaluate_model(
             for cat in category_disparities:
                 fairness_report["category_disparity_report"][f"{g_a}_vs_{g_b}"][cat] = {
                     "value": category_disparities[cat],
-                    "biased_toward": (
+                    "bias": f"{category_disparities[cat] > alpha}",
+                    "toward": (
                         g_a
                         if group_category_proportions.get(g_a, {}).get(cat, 0.0)
                         > group_category_proportions.get(g_b, {}).get(cat, 0.0)
@@ -242,15 +307,19 @@ def get_metrics(
     item_categories,
     get_recommendations,
     k=10,
-    delta=0.05,
+    alpha=0.02,
+    use_age_group=False,
 ):
     profiles = pd.read_csv("clean_data/profiles.csv")
+
+    if use_age_group:
+        profiles["age_group"] = profiles["birthday"].apply(age_to_group)
 
     user_groups_map = {}
     # user_groups_map id a sexo
     for row in profiles.itertuples():
         user_id = row.user_id
-        user_groups_map[user_id] = row.gender
+        user_groups_map[user_id] = row.gender if not use_age_group else row.age_group
 
     global_metrics, fairness_results = evaluate_model(
         k,
@@ -259,7 +328,7 @@ def get_metrics(
         item_popularity,
         item_categories,
         get_recommendations,
-        delta=delta,
+        alpha=alpha,
     )
 
     print("--- Métricas Globales de Evaluación ---")
@@ -272,3 +341,29 @@ def get_metrics(
     print(f"MAP Global: {global_metrics['mean_ap (MAP)']:.4f}")
     # print(f"¿Es sesgado (Recall)?: {fairness_results['is_biased_recall']}")
     # print(f"¿Es sesgado (Precision)?: {fairness_results['is_biased_precision']}")
+
+
+def age_to_group(birthday_str):
+    """It's either '', 'YYYY' or 'DD-MM-YYYY'"""
+
+    if not isinstance(birthday_str, str) or birthday_str.strip() == "":
+        return "Unknown"
+    try:
+        year = int(birthday_str[-4:])
+        age = 2025 - year
+        if age < 18:
+            return "<18"
+        elif 18 <= age < 25:
+            return "18-24"
+        elif 25 <= age < 35:
+            return "25-34"
+        elif 35 <= age < 45:
+            return "35-44"
+        elif 45 <= age < 55:
+            return "45-54"
+        elif 55 <= age < 65:
+            return "55-64"
+        else:
+            return "65+"
+    except ValueError:
+        return "Unknown"
