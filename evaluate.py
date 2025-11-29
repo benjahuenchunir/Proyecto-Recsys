@@ -306,14 +306,47 @@ def is_biased(disparity, tolerance):
 
 
 def get_metrics(
-    user_items_test,
-    item_popularity,
-    item_categories,
+    df_train,
+    df_test,
     get_recommendations,
     k=10,
     alpha=0.02,
     use_age_group=False,
 ):
+    
+    user_items = {}
+    for row in df_train.itertuples():
+        if row[1] not in user_items:
+            user_items[row[1]] = []
+        user_items[row[1]].append(row[2])
+    user_items_test = {}
+    for row in df_test.itertuples():
+        if row[1] not in user_items_test:
+            user_items_test[row[1]] = []
+        user_items_test[row[1]].append(row[2])
+
+    # Drop all users that are not in the training set
+    user2row = {user_id: matrix_row for matrix_row, user_id in enumerate(user_items.keys())}
+    user_items_test = {user: items for user, items in user_items_test.items() if user in user2row}
+
+    item_interaction_counts = df_train['itemid'].value_counts()
+    user_count = df_train['userid'].nunique()
+    item_popularity = (item_interaction_counts / user_count).to_dict()
+    
+    animes = pd.read_csv("clean_data/animes.csv")
+    metadata = animes[['uid', 'genre']]
+    item_categories: dict[int, set[str | None]] = {}
+    for row in metadata.itertuples():
+        if isinstance(row.genre, str):
+            genre_list = set(g.strip().replace("'", "") for g in row.genre[1:-1].split(','))
+        else:
+            genre_list: set = set()
+
+        if isinstance(row.uid, int):
+            item_categories[row.uid] = genre_list
+        else:
+            raise ValueError("Unexpected non-integer uid")
+    
     profiles = pd.read_csv("clean_data/profiles.csv")
 
     if use_age_group:
