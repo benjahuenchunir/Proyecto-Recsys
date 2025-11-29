@@ -310,7 +310,7 @@ def get_metrics(
     df_test,
     get_recommendations,
     k=10,
-    alpha=0.02,
+    alpha=0.2,
     use_age_group=False,
 ):
     
