@@ -11,3 +11,5 @@ En [DeepFM.ipynb](DeepFM.ipynb) se ejecuta el modelo junto al análisis de fairn
 Las últimas dos celdas de cada notebook tienen los resultados del análisis de fairness para géneros y grupos etarios
 
 En [otros_modelos.ipynb](otros_modelos.ipynb) hay código viejo de los modelos Most Popular y Random, pero no esta actualizado para el análisis de fairness
+
+La ejecución actual de estos modelos se realizó con el dataset nuevo
